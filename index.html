@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Himalaya Cat: The Ultimate Run</title>
+    <style>
+        :root { --gold: #FFD700; --red: #ff3333; }
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #000; font-family: 'Segoe UI', Tahoma, sans-serif; }
+        
+        /* واجهة التحكم */
+        #overlay { 
+            position: fixed; inset: 0; background: rgba(0,0,0,0.95); 
+            z-index: 1000; display: flex; flex-direction: column; align-items: center; justify-content: center;
+            transition: 0.4s;
+        }
+        .window { 
+            background: linear-gradient(145deg, #101020, #000); padding: 25px; 
+            border-radius: 30px; border: 2px solid var(--gold); text-align: center;
+            width: 90%; max-width: 500px; box-shadow: 0 0 50px rgba(0,0,0,1);
+        }
+        .shop-grid { 
+            display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 15px 0;
+            max-height: 160px; overflow-y: auto; background: rgba(255,255,255,0.05); padding: 10px; border-radius: 15px;
+        }
+        .card { background: #1a1a1a; padding: 10px; border-radius: 12px; border: 1px solid #333; cursor: pointer; font-size: 11px; color: #fff; }
+        .card.active { border: 2px solid var(--gold); background: #332b00; box-shadow: 0 0 15px var(--gold); }
+
+        .btn-start { 
+            background: var(--gold); color: #000; padding: 18px 60px; border-radius: 50px; 
+            border: none; font-size: 24px; font-weight: bold; cursor: pointer; margin-top: 20px;
+            animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
+
+        #hud { 
+            position: fixed; top: env(safe-area-inset-top, 15px); width: 100%; display: flex; justify-content: space-around;
+            z-index: 500; font-weight: bold; color: var(--gold); text-shadow: 2px 2px #000; pointer-events: none;
+        }
+        canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+    </style>
+</head>
+<body>
+
+<div id="hud">
+    <div>💰 الذهب: <span id="c-val">0</span></div>
+    <div>📍 المرحلة <span id="s-val">1</span></div>
+    <div>📏 <span id="d-val">0</span>م</div>
+</div>
+
+<div id="overlay">
+    <div class="window">
+        <h2 style="color:var(--gold); margin:0;" id="m-title">دهليز الهيمالايا الأسطوري</h2>
+        <div class="shop-grid" id="shop-container"></div>
+        <div style="border: 1px dashed var(--red); padding: 12px; border-radius: 20px; background: rgba(255,51,51,0.1);">
+            <p style="margin:0; font-size:13px; color:#fff;">🏥 تبرع لعلاج قطط الهيمالايا ($1)</p>
+            <button onclick="playSFX(300,'sine',0.2); alert('شكراً لشهامتك! تم تسجيل تبرعك ❤️')" style="background:var(--red); border:none; color:white; padding:6px 20px; border-radius:10px; cursor:pointer; margin-top:8px; font-weight:bold;">تبرع الآن</button>
+        </div>
+    </div>
+    <button class="btn-start" onclick="startGame()">ابدأ المغامرة 🚀</button>
+</div>
+
+<canvas id="gameCanvas"></canvas>
+
+<script>
+const canvas = document.getElementById('gameCanvas'), ctx = canvas.getContext('2d');
+const overlay = document.getElementById('overlay'), shop = document.getElementById('shop-container'), mainTitle = document.getElementById('m-title');
+
+// الموارد
+const imgCat = new Image(); imgCat.src = 'https://cdn-icons-png.flaticon.com/512/1864/1864514.png';
+const imgObs = new Image(); imgObs.src = 'https://cdn-icons-png.flaticon.com/512/1211/1211053.png';
+const imgCoin = new Image(); imgCoin.src = 'https://cdn-icons-png.flaticon.com/512/2489/2489756.png';
+
+let active = false, stage = 1, coins = 0, distance = 0, frame = 0;
+let obstacles = [], goldList = [];
+let p = { x: 0, y: 0, v: 0, g: 0.45, j: -9.2, w: 70, h: 60 };
+
+// محرك الصوت (AudioContext)
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+function playSFX(f, t, d) {
+    if(audioCtx.state === 'suspended') audioCtx.resume();
+    let o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.type = t; o.frequency.setValueAtTime(f, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + d);
+    o.connect(g); g.connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime + d);
+}
+
+function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    p.x = canvas.width * 0.15;
+    if(!active) p.y = canvas.height / 2;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// إنشاء المتاجر الـ 20 غداً سنكمل الـ 18 الباقية
+for(let i=1; i<=20; i++) {
+    const d = document.createElement('div');
+    d.className = `card ${i===1?'active':''}`;
+    d.id = `stage-${i}`;
+    d.innerHTML = `متجر ${i}<br><span style="color:var(--gold)">$0.99</span>`;
+    d.onclick = () => {
+        stage = i;
+        document.querySelectorAll('.card').forEach(c => c.classList.remove('active'));
+        d.classList.add('active');
+        playSFX(400, 'sine', 0.1);
+    };
+    shop.appendChild(d);
+}
+
+function startGame() {
+    active = true; distance = 0; obstacles = []; goldList = []; frame = 0;
+    p.y = canvas.height / 2; p.v = 0;
+    overlay.style.opacity = '0';
+    setTimeout(() => overlay.style.display = 'none', 400);
+    playSFX(200, 'square', 0.5);
+    render();
+}
+
+function render() {
+    if(!active) return;
+    frame++; distance += 2;
+    document.getElementById('d-val').innerText = Math.floor(distance/10);
+    document.getElementById('s-val').innerText = stage;
+    document.getElementById('c-val').innerText = coins;
+
+    // خلفية الكهف
+    ctx.fillStyle = '#050510'; ctx.fillRect(0,0,canvas.width, canvas.height);
+    
+    // الدهاليز الصخرية (تتغير ألوانها حسب المرحلة)
+    let wallH = (canvas.height * 0.15) + Math.sin(frame*0.02) * 40;
+    ctx.fillStyle = `hsla(${stage * 50}, 70%, 10%, 1)`;
+    ctx.fillRect(0, 0, canvas.width, wallH); 
+    ctx.fillRect(0, canvas.height - wallH, canvas.width, wallH);
+
+    // القطة (حركة حقيقية)
+    p.v += p.g; p.y += p.v;
+    ctx.save();
+    ctx.translate(p.x + p.w/2, p.y + p.h/2);
+    ctx.scale(-1, 1);
+    ctx.rotate(p.v * 0.03); // إمالة القطة عند القفز والسقوط
+    ctx.drawImage(imgCat, -p.w/2, -p.h/2, p.w, p.h);
+    ctx.restore();
+
+    // الكوينز (ذهبية حقيقية)
+    if(frame % 90 == 0) goldList.push({x: canvas.width, y: wallH + 50 + Math.random()*(canvas.height - wallH*2 - 100)});
+    goldList.forEach((g, i) => {
+        g.x -= (6 + stage*0.1);
+        ctx.drawImage(imgCoin, g.x, g.y, 35, 35);
+        if(Math.hypot(p.x+35-g.x, p.y+30-g.y) < 40) {
+            goldList.splice(i,1); coins++;
+            playSFX(800 + (coins*10), 'sine', 0.1);
+        }
+    });
+
+    // الوحوش الحقيقية
+    if(frame > 100 && frame % Math.max(35, 100 - stage*4) == 0) {
+        obstacles.push({x: canvas.width, y: wallH + Math.random()*(canvas.height - wallH*2 - 80), s: 75});
+    }
+    obstacles.forEach((o, i) => {
+        o.x -= (7 + stage*0.5);
+        ctx.drawImage(imgObs, o.x, o.y, o.s, o.s);
+        // تصادم دقيق (Hitbox)
+        if(p.x+15 < o.x+o.s-15 && p.x+p.w-15 > o.x+15 && p.y+15 < o.y+o.s-15 && p.y+p.h-15 > o.y+15) gameOver(false);
+        if(o.x < -100) obstacles.splice(i,1);
+    });
+
+    // قوانين الخسارة والربح
+    if(p.y < wallH - 20 || p.y > canvas.height - wallH - p.h + 20) gameOver(false);
+    if(distance > 3000) gameOver(true);
+
+    requestAnimationFrame(render);
+}
+
+function gameOver(win) {
+    active = false;
+    playSFX(win ? 1000 : 80, win ? 'square' : 'sawtooth', 0.6);
+    mainTitle.innerText = win ? "🏆 تم اجتياز الدهليز!" : "💀 سقطت القطة!";
+    mainTitle.style.color = win ? "var(--gold)" : "var(--red)";
+    if(win) stage++;
+    overlay.style.display = 'flex';
+    setTimeout(() => overlay.style.opacity = '1', 50);
+}
+
+// التحكم (لمس أو ماوس)
+const handleAction = (e) => { 
+    if(active) { p.v = p.j; playSFX(600, 'triangle', 0.05); } 
+    if(e) e.preventDefault(); 
+};
+window.addEventListener('mousedown', handleAction);
+window.addEventListener('touchstart', handleAction, {passive: false});
+
+</script>
+</body>
+</html>
